@@ -2,10 +2,10 @@
 // 1. Firebase: Console > Project settings > Your apps > Web app > salin config.
 //    Dibiarkan kosong = MODE DEMO (data di localStorage browser, password admin: bts123).
 export const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  appId: ""
+  apiKey: "AIzaSyAzqrL0Oy9Ad5yv1T49VjRfhDnXQkgKYTw",
+  authDomain: "tracklive-ed2a9.firebaseapp.com",
+  projectId: "tracklive-ed2a9",
+  appId: "1:432038303523:web:c213b9b5f44813b5475e96"
 };
 
 // 2. YouTube Data API v3 key (opsional). Tanpa key, status live diatur manual
