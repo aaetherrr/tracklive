@@ -10,7 +10,7 @@ export const firebaseConfig = {
 
 // 2. YouTube Data API v3 key (opsional). Tanpa key, status live diatur manual
 //    lewat centang "Sedang live" di admin. Batasi key ke domain GitHub Pages kamu.
-export const YT_API_KEY = "";
+export const YT_API_KEY = "AIzaSyDMLiv8KtagsDg37yIrhQqc8P9zwYhp4e8";
 
 export const DEMO = !firebaseConfig.apiKey;
 export const POLL_MS = 60000; // cek status live tiap 60 detik
