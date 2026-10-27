@@ -60,6 +60,12 @@ export const db = {
     if (DEMO) return localStorage.setItem(`bts_${col}_${id}`, JSON.stringify(data));
     await fb.fs.setDoc(fb.fs.doc(fb.db, col, id), data);
   },
+  // Mendengarkan perubahan satu dokumen (hanya di mode Firebase)
+  async listen(col, id, cb) {
+    await init();
+    if (DEMO) return () => {};
+    return fb.fs.onSnapshot(fb.fs.doc(fb.db, col, id), s => cb(s.exists() ? s.data() : null), e => console.warn(e));
+  },
   async remove(col, id) {
     await init();
     if (DEMO) return putLocal(col, local(col).filter(r => r.id !== id));

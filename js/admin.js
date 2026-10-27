@@ -7,7 +7,7 @@ const defs = {
   members: { label: 'Member', title: r => `${r.name} · ${r.tier}`, fields: [
     ['name', 'Nama karakter', 'text'], ['tier', 'Tier', 'select', TIERS], ['parent', 'Atasan langsung (kosong = otomatis menurut tier)', 'parent'], ['title', 'Jabatan / julukan', 'text'],
     ['order', 'Urutan (kecil = atas)', 'number'], ['avatar', 'URL foto (opsional)', 'url'],
-    ['channelUrl', 'Link channel YouTube', 'url'], ['videoUrl', 'Link live / video YouTube', 'url'], ['liveTitle', 'Judul live (opsional; otomatis jika pakai API key)', 'text'],
+    ['channelUrl', 'Link channel YouTube (mis. https://youtube.com/@nama), dipakai deteksi live otomatis', 'url'], ['videoUrl', 'Link live / video YouTube (opsional jika deteksi dari channel aktif)', 'url'], ['liveTitle', 'Judul live (opsional; otomatis jika pakai API key)', 'text'],
     ['manualLive', 'Sedang live (dipakai jika tanpa API key)', 'checkbox']] },
   posts: { label: 'Blog', title: r => `${r.title} (${r.date})`, fields: [['title', 'Judul', 'text'], ['body', 'Isi (pisahkan paragraf dengan baris kosong)', 'textarea']] }
 };

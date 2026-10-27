@@ -6,7 +6,9 @@ import { applySite } from './site.js';
 import { initTheme } from './theme.js';
 
 const app = document.getElementById('app');
-let timer;
+let timer, onLive = null, serverLive = null;
+const fresh = d => (d && Date.now() - d.updatedAt < 20 * 60000 ? d : null);
+db.listen('live', 'status', d => { serverLive = d; if (onLive) onLive(); }).catch(() => {});
 
 const card = m => {
   const href = safeUrl(m.live ? m.videoUrl || m.channelUrl : m.channelUrl);
@@ -17,8 +19,15 @@ const card = m => {
 };
 
 async function withStatus(members) {
-  const st = await checkLive(members);
-  return members.map(m => ({ ...m, ...(st[m.id] || { live: !!m.manualLive }) }));
+  const st = await checkLive(members), sv = fresh(serverLive);
+  return members.map(m => {
+    // Member yang punya link channel dan dikenali server: pakai hasil deteksi otomatis
+    if (sv && m.channelUrl && !(sv.untracked || []).includes(m.id)) {
+      const it = sv.items && sv.items[m.id];
+      return it ? { ...m, ...it, live: true } : { ...m, live: false };
+    }
+    return { ...m, ...(st[m.id] || { live: !!m.manualLive }) };
+  });
 }
 
 const ago = iso => {
@@ -120,11 +129,13 @@ async function home() {
   let next = Date.now() + POLL_MS;
   const tick = () => {
     const s = Math.max(0, Math.ceil((next - Date.now()) / 1000));
-    $('scan').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    const sv = fresh(serverLive);
+    $('scan').textContent = sv ? Math.max(0, Math.floor((Date.now() - sv.updatedAt) / 60000)) + ' mnt lalu' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
     if (s === 0) { next = Date.now() + POLL_MS; draw(); }
     // Durasi live berjalan sendiri tanpa menunggu scan (dihitung dari jam mulai siaran)
     document.querySelectorAll('[data-since]').forEach(el => { const t = ago(el.dataset.since); if (el.textContent !== t) el.textContent = t; });
   };
+  onLive = () => draw();
   tick(); await draw();
   timer = setInterval(tick, 1000);
 }
@@ -196,6 +207,7 @@ async function post(id) {
 
 async function route() {
   clearInterval(timer);
+  onLive = null;
   window.onresize = null;
   const [p = '', id] = location.hash.replace(/^#\/?/, '').split('/');
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#/' + p));
