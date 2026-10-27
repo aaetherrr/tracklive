@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Ganti dengan email akun admin yang dibuat di Firebase Authentication
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "GANTI_DENGAN_EMAIL_ADMIN";
+    }
+
+    // Semua orang boleh membaca, hanya admin yang boleh menulis
+    match /members/{id}  { allow read: if true; allow write: if isAdmin(); }
+    match /posts/{id}    { allow read: if true; allow write: if isAdmin(); }
+    match /settings/{id} { allow read: if true; allow write: if isAdmin(); }
+  }
+}
