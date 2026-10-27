@@ -100,6 +100,7 @@ for (let i = 0; i < ids.length; i += 50) {
     const cand = {
       videoUrl: `https://www.youtube.com/watch?v=${v.id}`,
       liveTitle: v.snippet.title,
+      ytName: v.snippet.channelTitle,
       thumb: (t.maxres || t.standard || t.high || {}).url || '',
       viewers: d.concurrentViewers || '',
       startedAt: d.actualStartTime || ''
