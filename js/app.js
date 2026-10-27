@@ -7,6 +7,9 @@ import { initTheme } from './theme.js';
 
 const app = document.getElementById('app');
 let timer, onLive = null, serverLive = null;
+const SCAN_MS = 5 * 60000; // interval jadwal GitHub Actions
+const dn = m => m.ytName || m.name; // nama tampil di kartu live: nama channel YouTube
+const fmt = n => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
 const fresh = d => (d && Date.now() - d.updatedAt < 20 * 60000 ? d : null);
 db.listen('live', 'status', d => { serverLive = d; if (onLive) onLive(); }).catch(() => {});
 
@@ -39,14 +42,14 @@ const ico = d => `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 const EYE = ico('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
 const CLOCK = ico('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>');
 const meta = m => (m.viewers ? `<span class="mi" title="Penonton">${EYE}${esc(m.viewers)}</span>` : '') + (m.startedAt ? `<span class="mi" title="Sudah live">${CLOCK}<span data-since="${esc(m.startedAt)}">${ago(m.startedAt)}</span></span>` : '');
-const avatar = m => m.avatar ? `<img src="${esc(safeUrl(m.avatar))}" alt="">` : esc(m.name[0]);
+const avatar = m => m.avatar ? `<img src="${esc(safeUrl(m.avatar))}" alt="">` : esc(dn(m)[0]);
 
 const liveCard = m => {
   const id = videoId(m.videoUrl), href = esc(safeUrl(m.videoUrl || m.channelUrl));
   return `<a class="lcard" href="${href}" target="_blank" rel="noopener">
     <div class="thumb">${id ? `<img src="${esc(m.thumb || `https://i.ytimg.com/vi/${id}/hqdefault_live.jpg`)}" alt="" loading="lazy">` : '<span class="bolt-bg">BTS</span>'}
       <span class="badge live">Live</span>
-      <div class="ov"><h3>${esc(m.name)}</h3><span>${esc(m.title || m.tier)}</span></div></div>
+      <div class="ov"><h3>${esc(dn(m))}</h3></div></div>
     ${m.liveTitle ? `<p class="ltitle">${esc(m.liveTitle)}</p>` : ''}
     <div class="act">${meta(m)}<span class="go">Tonton ›</span></div></a>`;
 };
@@ -76,7 +79,7 @@ async function home() {
   const sorters = {
     views: (a, b) => (+b.viewers || 0) - (+a.viewers || 0),
     new: (a, b) => (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0),
-    name: (a, b) => a.name.localeCompare(b.name)
+    name: (a, b) => dn(a).localeCompare(dn(b))
   };
   let page = 1, on = [], tier = 'Semua';
   const render = () => {
@@ -89,13 +92,13 @@ async function home() {
       $('tier').dataset.sig = sig;
     }
     $('tierwrap').hidden = tiers.length < 3;
-    const list = on.filter(m => (tier === 'Semua' || m.tier === tier) && `${m.name} ${m.liveTitle || ''} ${m.title || ''}`.toLowerCase().includes(q))
+    const list = on.filter(m => (tier === 'Semua' || m.tier === tier) && `${dn(m)} ${m.name} ${m.liveTitle || ''}`.toLowerCase().includes(q))
       .sort(sorters[$('sort').value]);
     const pages = Math.max(1, Math.ceil(list.length / PER));
     page = Math.min(page, pages);
     countTo($('n'), on.length);
     countTo($('mview'), on.reduce((t, m) => t + (+m.viewers || 0), 0));
-    $('stack').innerHTML = on.slice(0, 5).map(m => `<span class="av s" title="${esc(m.name)}">${avatar(m)}</span>`).join('') + (on.length > 5 ? `<span class="av s">+${on.length - 5}</span>` : '');
+    $('stack').innerHTML = on.slice(0, 5).map(m => `<span class="av s" title="${esc(dn(m))}">${avatar(m)}</span>`).join('') + (on.length > 5 ? `<span class="av s">+${on.length - 5}</span>` : '');
     $('count').textContent = list.length + ' live';
     $('liveGrid').innerHTML = list.length ? list.slice((page - 1) * PER, page * PER).map(liveCard).join('')
       : on.length ? '<div class="empty"><h3>Tidak ada hasil</h3><p>Coba kata kunci atau filter lain.</p></div>'
@@ -121,16 +124,16 @@ async function home() {
   const setTicker = () => {
     const sig = on.map(m => m.id + (m.liveTitle || '')).join('|');
     if (sig === tsig) return; tsig = sig;
-    const item = m => `<span class="ti"><i class="dot"></i><b>${esc(m.name)}</b>${m.liveTitle ? `<em>${esc(m.liveTitle)}</em>` : ''}</span>`;
+    const item = m => `<span class="ti"><i class="dot"></i><b>${esc(dn(m))}</b>${m.liveTitle ? `<em>${esc(m.liveTitle)}</em>` : ''}</span>`;
     const grp = `<span class="tg">${on.map(item).join('')}</span>`;
-    $('ticker').innerHTML = on.length ? `<div class="tk" style="--dur:${Math.max(24, on.length * 9)}s">${grp}${grp}</div>` : '<span class="tnone">Belum ada anggota yang live. Auto scan berjalan tiap menit.</span>';
+    $('ticker').innerHTML = on.length ? `<div class="tk" style="--dur:${Math.max(24, on.length * 9)}s">${grp}${grp}</div>` : '<span class="tnone">Belum ada anggota yang live. Daftar diperbarui otomatis.</span>';
   };
   const draw = async () => { on = (await withStatus(members)).filter(m => m.live); render(); setTicker(); };
   let next = Date.now() + POLL_MS;
   const tick = () => {
     const s = Math.max(0, Math.ceil((next - Date.now()) / 1000));
     const sv = fresh(serverLive);
-    $('scan').textContent = sv ? Math.max(0, Math.floor((Date.now() - sv.updatedAt) / 60000)) + ' mnt lalu' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    $('scan').textContent = sv ? fmt(Math.max(0, Math.ceil((sv.updatedAt + SCAN_MS - Date.now()) / 1000))) : fmt(s);
     if (s === 0) { next = Date.now() + POLL_MS; draw(); }
     // Durasi live berjalan sendiri tanpa menunggu scan (dihitung dari jam mulai siaran)
     document.querySelectorAll('[data-since]').forEach(el => { const t = ago(el.dataset.since); if (el.textContent !== t) el.textContent = t; });

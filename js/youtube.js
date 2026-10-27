@@ -22,6 +22,7 @@ export async function checkLive(members) {
           live: v.snippet.liveBroadcastContent === 'live',
           viewers: v.liveStreamingDetails?.concurrentViewers,
           liveTitle: v.snippet.title,
+          ytName: v.snippet.channelTitle,
           startedAt: v.liveStreamingDetails?.actualStartTime,
           thumb: (t.maxres || t.standard || t.high || {}).url
         };
