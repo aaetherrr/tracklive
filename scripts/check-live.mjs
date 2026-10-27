@@ -42,20 +42,27 @@ async function resolveChannel(url) {
   return j.items?.[0]?.id || null;
 }
 
-// Video terbaru channel: RSS dulu (tanpa kuota), cadangan: playlist uploads (1 unit)
+// Video terbaru channel dari dua sumber (digabung agar tidak ada yang terlewat):
+// RSS (tanpa kuota) dan playlist uploads (1 unit per channel)
 async function recentIds(channelId) {
+  let rss = [], up = [], rssErr = '', upErr = '';
   try {
     const r = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, { headers: { 'user-agent': 'Mozilla/5.0' } });
-    if (r.ok) {
-      const ids = [...(await r.text()).matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g)].map(m => m[1]).slice(0, 8);
-      if (ids.length) return ids;
-    }
-  } catch (e) { /* lanjut ke cadangan */ }
-  const j = await yt('playlistItems', { part: 'contentDetails', playlistId: 'UU' + channelId.slice(2), maxResults: 8 });
-  return (j.items || []).map(i => i.contentDetails.videoId);
+    if (r.ok) rss = [...(await r.text()).matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g)].map(m => m[1]).slice(0, 8);
+    else rssErr = 'HTTP ' + r.status;
+  } catch (e) { rssErr = e.message; }
+  try {
+    const j = await yt('playlistItems', { part: 'contentDetails', playlistId: 'UU' + channelId.slice(2), maxResults: 10 });
+    up = (j.items || []).map(i => i.contentDetails.videoId);
+  } catch (e) { upErr = e.message; }
+  if (!rss.length && !up.length) throw new Error(`RSS gagal (${rssErr || 'kosong'}), uploads gagal (${upErr || 'kosong'})`);
+  return { ids: [...new Set([...rss, ...up])], rss: rss.length, up: up.length, rssErr, upErr };
 }
 
+console.log('Mulai cek live', new Date().toISOString());
 const members = (await db.collection('members').get()).docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.channelUrl);
+if (!members.length) console.warn('Tidak ada member yang punya link channel di Firestore.');
+const name = Object.fromEntries(members.map(m => [m.id, m.name]));
 const cache = (await db.doc('live/cache').get()).data() || {};
 const prev = (await db.doc('live/status').get()).data() || {};
 let cacheDirty = false;
@@ -75,15 +82,20 @@ for (const m of members) {
 
 const owner = {}, carry = new Set();
 for (const [mid, cid] of Object.entries(chan)) {
-  try { (await recentIds(cid)).forEach(v => { owner[v] = mid; }); }
-  catch (e) { console.warn(`Gagal ambil video channel ${mid}: ${e.message}`); carry.add(mid); }
+  try {
+    const r = await recentIds(cid);
+    r.ids.forEach(v => { owner[v] = mid; });
+    console.log(`- ${name[mid]} | channel ${cid} | video RSS: ${r.rss}${r.rssErr ? ' (' + r.rssErr + ')' : ''} | video uploads: ${r.up}${r.upErr ? ' (' + r.upErr + ')' : ''}`);
+  } catch (e) { console.warn(`- ${name[mid]} | GAGAL: ${e.message}`); carry.add(mid); }
 }
 
 const ids = Object.keys(owner), items = {};
 for (let i = 0; i < ids.length; i += 50) {
   const j = await yt('videos', { part: 'snippet,liveStreamingDetails', id: ids.slice(i, i + 50).join(',') });
   for (const v of j.items || []) {
-    if (v.snippet.liveBroadcastContent !== 'live') continue;
+    const status = v.snippet.liveBroadcastContent;
+    if (status !== 'none') console.log(`  ${name[owner[v.id]]}: video ${v.id} berstatus "${status}" (${v.snippet.title.slice(0, 50)})`);
+    if (status !== 'live') continue;
     const mid = owner[v.id], t = v.snippet.thumbnails || {}, d = v.liveStreamingDetails || {};
     const cand = {
       videoUrl: `https://www.youtube.com/watch?v=${v.id}`,
