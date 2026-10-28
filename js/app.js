@@ -8,7 +8,8 @@ import { initTheme } from './theme.js';
 const app = document.getElementById('app');
 let timer, onLive = null, serverLive = null;
 const SCAN_MS = 5 * 60000; // interval jadwal GitHub Actions
-const dn = m => m.ytName || m.name; // nama tampil di kartu live: nama channel YouTube
+const handleOf = u => { try { const p = new URL(u).pathname.split('/').filter(Boolean)[0] || ''; return p.startsWith('@') ? p : ''; } catch (e) { return ''; } };
+const dn = m => m.ytName || handleOf(m.channelUrl) || m.name; // nama tampil di kartu live
 const fmt = n => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
 const fresh = d => (d && Date.now() - d.updatedAt < 20 * 60000 ? d : null);
 db.listen('live', 'status', d => { serverLive = d; if (onLive) onLive(); }).catch(() => {});
@@ -22,14 +23,21 @@ const card = m => {
 };
 
 async function withStatus(members) {
-  const st = await checkLive(members), sv = fresh(serverLive);
-  return members.map(m => {
-    // Member yang punya link channel dan dikenali server: pakai hasil deteksi otomatis
+  const sv = fresh(serverLive);
+  const base = members.map(m => {
     if (sv && m.channelUrl && !(sv.untracked || []).includes(m.id)) {
       const it = sv.items && sv.items[m.id];
-      return it ? { ...m, ...it, live: true } : { ...m, live: false };
+      return it ? { ...m, ...it, live: true, src: 'srv' } : { ...m, live: false, src: 'off' };
     }
-    return { ...m, ...(st[m.id] || { live: !!m.manualLive }) };
+    return m;
+  });
+  // Jika YT_API_KEY diisi: tanya YouTube hanya untuk video yang sedang live, sehingga penonton ikut segar tiap menit
+  const st = await checkLive(base.filter(m => m.src !== 'off'));
+  return base.map(m => {
+    const s = st[m.id];
+    if (m.src === 'srv') return s ? { ...m, ...s } : m;
+    if (m.src === 'off') return m;
+    return { ...m, ...(s || { live: !!m.manualLive }) };
   });
 }
 
@@ -45,13 +53,13 @@ const meta = m => (m.viewers ? `<span class="mi" title="Penonton">${EYE}${esc(m.
 const avatar = m => m.avatar ? `<img src="${esc(safeUrl(m.avatar))}" alt="">` : esc(dn(m)[0]);
 
 const liveCard = m => {
-  const id = videoId(m.videoUrl), href = esc(safeUrl(m.videoUrl || m.channelUrl));
+  const id = videoId(m.videoUrl), href = esc(safeUrl(m.videoUrl || m.channelUrl)), info = meta(m);
   return `<a class="lcard" href="${href}" target="_blank" rel="noopener">
     <div class="thumb">${id ? `<img src="${esc(m.thumb || `https://i.ytimg.com/vi/${id}/hqdefault_live.jpg`)}" alt="" loading="lazy">` : '<span class="bolt-bg">BTS</span>'}
       <span class="badge live">Live</span>
-      <div class="ov"><h3>${esc(dn(m))}</h3></div></div>
-    ${m.liveTitle ? `<p class="ltitle">${esc(m.liveTitle)}</p>` : ''}
-    <div class="act">${meta(m)}<span class="go">Tonton ›</span></div></a>`;
+      <span class="play" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+    <div class="cbody"><div class="av">${avatar(m)}</div>
+      <div class="ctext"><h3 class="ctitle">${esc(m.liveTitle || 'Sedang siaran langsung')}</h3><p class="cname">${esc(dn(m))}</p>${info ? `<div class="cmeta">${info}</div>` : ''}</div></div></a>`;
 };
 
 async function home() {
@@ -133,7 +141,8 @@ async function home() {
   const tick = () => {
     const s = Math.max(0, Math.ceil((next - Date.now()) / 1000));
     const sv = fresh(serverLive);
-    $('scan').textContent = sv ? fmt(Math.max(0, Math.ceil((sv.updatedAt + SCAN_MS - Date.now()) / 1000))) : fmt(s);
+    const r = sv ? Math.ceil((sv.updatedAt + SCAN_MS - Date.now()) / 1000) : s;
+    $('scan').textContent = r > 0 ? fmt(r) : sv ? (-r < 600 ? 'Memperbarui…' : 'Tertunda') : fmt(0);
     if (s === 0) { next = Date.now() + POLL_MS; draw(); }
     // Durasi live berjalan sendiri tanpa menunggu scan (dihitung dari jam mulai siaran)
     document.querySelectorAll('[data-since]').forEach(el => { const t = ago(el.dataset.since); if (el.textContent !== t) el.textContent = t; });

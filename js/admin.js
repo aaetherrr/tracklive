@@ -4,16 +4,40 @@ import { TIERS, esc } from './util.js';
 import { paintMark, saveSite, loadTiers, DEFAULT_LINKS } from './site.js';
 
 const defs = {
-  members: { label: 'Member', title: r => `${r.name} · ${r.tier}`, fields: [
+  members: { label: 'Member', title: r => r.name, sub: r => [r.tier, r.title].filter(Boolean).join(' · '), ini: r => (r.name || '?')[0], fields: [
     ['name', 'Nama karakter', 'text'], ['tier', 'Tier', 'select', TIERS], ['parent', 'Atasan langsung (kosong = otomatis menurut tier)', 'parent'], ['title', 'Jabatan / julukan', 'text'],
     ['order', 'Urutan (kecil = atas)', 'number'], ['avatar', 'URL foto (opsional)', 'url'],
     ['channelUrl', 'Link channel YouTube (mis. https://youtube.com/@nama), dipakai deteksi live otomatis', 'url'], ['videoUrl', 'Link live / video YouTube (opsional jika deteksi dari channel aktif)', 'url'], ['liveTitle', 'Judul live (opsional; otomatis jika pakai API key)', 'text'],
     ['manualLive', 'Sedang live (dipakai jika tanpa API key)', 'checkbox']] },
-  posts: { label: 'Blog', title: r => `${r.title} (${r.date})`, fields: [['title', 'Judul', 'text'], ['body', 'Isi (pisahkan paragraf dengan baris kosong)', 'textarea']] }
+  posts: { label: 'Blog', title: r => r.title, sub: r => r.date || '', ini: r => (r.title || '?')[0], fields: [['title', 'Judul', 'text'], ['body', 'Isi (pisahkan paragraf dengan baris kosong)', 'textarea']] }
 };
 
-const tabsHtml = t => `<div class="tabs">${[['members', 'Member'], ['posts', 'Blog'], ['settings', 'Pengaturan']]
-  .map(([k, l]) => `<button data-tab="${k}" class="${t === k ? 'on' : ''}">${l}</button>`).join('')}<button class="ghost" id="out">Keluar</button></div>`;
+const I = d => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const TAB_ICONS = {
+  members: I('<path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/>'),
+  posts: I('<path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/>'),
+  settings: I('<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>')
+};
+const OUT = I('<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>');
+const tabsHtml = t => `<div class="tabs" role="tablist">${[['members', 'Member'], ['posts', 'Blog'], ['settings', 'Pengaturan']]
+  .map(([k, l]) => `<button data-tab="${k}" class="${t === k ? 'on' : ''}">${TAB_ICONS[k]}<span>${l}</span></button>`).join('')}<button class="ghost out" id="out">${OUT}<span>Keluar</span></button></div>`;
+const HEAD = {
+  members: ['Member', 'Tambah dan atur member, tier, atasan, serta link channel YouTube.'],
+  posts: ['Blog', 'Tulis dan kelola kabar untuk komunitas.'],
+  settings: ['Pengaturan', 'Identitas situs, tier, dan tautan navbar.']
+};
+const head = t => `<header class="adm-head"><h1>${HEAD[t][0]}</h1><p>${HEAD[t][1]}</p></header>`;
+
+const field = ([k, l, t, o], v, rows) => {
+  if (t === 'checkbox') return `<div class="fld wide"><label class="ck"><input type="checkbox" name="${k}" ${v[k] ? 'checked' : ''}><span>${l}</span></label></div>`;
+  const wide = t === 'textarea' || ['channelUrl', 'videoUrl', 'liveTitle'].includes(k) ? ' wide' : '';
+  const ctl = t === 'select'
+    ? `<select name="${k}">${o.map(x => `<option ${v[k] === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`
+    : t === 'parent' ? `<select name="${k}"><option value="">Otomatis (sesuai tier)</option>${rows.filter(r => r.id !== v.id).map(r => `<option value="${esc(r.id)}" ${v[k] === r.id ? 'selected' : ''}>${esc(r.name)} (${esc(r.tier)})</option>`).join('')}</select>`
+    : t === 'textarea' ? `<textarea name="${k}">${esc(v[k])}</textarea>`
+    : `<input type="${t}" name="${k}" value="${esc(v[k])}" ${k === 'name' || k === 'title' ? 'required' : ''}>`;
+  return `<div class="fld${wide}"><label>${l}</label>${ctl}</div>`;
+};
 
 const shrink = file => new Promise((res, rej) => {
   const img = new Image(), url = URL.createObjectURL(file);
@@ -30,6 +54,7 @@ const shrink = file => new Promise((res, rej) => {
 export async function renderAdmin(app) {
   if (!(await auth.current())) return loginView(app);
   await loadTiers();
+  app.classList.add('adm');
   let tab = 'members', edit = null;
   const note = DEMO ? '<div class="note">Mode demo: data hanya tersimpan di browser ini. Isi js/config.js untuk pakai Firebase.</div>' : '';
   const wireTabs = () => {
@@ -39,7 +64,7 @@ export async function renderAdmin(app) {
   const drawSettings = async () => {
     const s = (await db.get('settings', 'site')) || {};
     let logo = s.logo || '';
-    app.innerHTML = `<h1>Admin</h1>${note}${tabsHtml(tab)}
+    app.innerHTML = `${tabsHtml(tab)}${head('settings')}${note}
       <div class="panel"><h3>Pengaturan situs</h3><form id="sf">
         <label>Nama situs</label><input name="siteName" value="${esc(s.siteName || 'BTS Live')}" required>
         <label>Subjudul (kecil, di bawah nama)</label><input name="tagline" value="${esc(s.tagline || 'Tracker')}">
@@ -136,19 +161,13 @@ export async function renderAdmin(app) {
     if (tab === 'settings') return drawSettings();
     const d = defs[tab], rows = await db.list(tab);
     const v = edit || {};
-    app.innerHTML = `<h1>Admin</h1>
-      ${DEMO ? '<div class="note">Mode demo: data hanya tersimpan di browser ini. Isi js/config.js untuk pakai Firebase.</div>' : ''}
-      ${tabsHtml(tab)}
-      <div class="panel"><h3>${edit ? 'Edit' : 'Tambah'} ${d.label}</h3><form id="f">
-        ${d.fields.map(([k, l, t, o]) => `<label>${l}</label>` + (t === 'select'
-          ? `<select name="${k}">${o.map(x => `<option ${v[k] === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`
-          : t === 'parent' ? `<select name="${k}"><option value="">Otomatis (sesuai tier)</option>${rows.filter(r => r.id !== v.id).map(r => `<option value="${esc(r.id)}" ${v[k] === r.id ? 'selected' : ''}>${esc(r.name)} (${esc(r.tier)})</option>`).join('')}</select>`
-          : t === 'textarea' ? `<textarea name="${k}">${esc(v[k])}</textarea>`
-          : t === 'checkbox' ? `<input type="checkbox" name="${k}" ${v[k] ? 'checked' : ''}>`
-          : `<input type="${t}" name="${k}" value="${esc(v[k])}" ${k === 'name' || k === 'title' ? 'required' : ''}>`)).join('')}
-        <p><button>Simpan ${d.label}</button> ${edit ? '<button type="button" class="ghost" id="cancel">Batal</button>' : ''}</p></form></div>
-      <div class="panel"><h3>Daftar ${d.label}</h3>${rows.map(r => `<div class="row"><div>${esc(d.title(r))}</div>
-        <div><button class="ghost" data-e="${esc(r.id)}">Edit</button><button class="del" data-d="${esc(r.id)}">Hapus</button></div></div>`).join('') || '<p class="muted">Kosong.</p>'}</div>`;
+    app.innerHTML = `${tabsHtml(tab)}${head(tab)}${note}
+      <div class="panel"><div class="ph"><h3>${edit ? 'Edit' : 'Tambah'} ${d.label}</h3>${edit ? '<span class="chip">Mode edit</span>' : ''}</div>
+        <form id="f" class="fgrid">
+        ${d.fields.map(f => field(f, v, rows)).join('')}
+        <div class="fact"><button>Simpan ${d.label}</button>${edit ? '<button type="button" class="ghost" id="cancel">Batal</button>' : ''}</div></form></div>
+      <div class="panel"><div class="ph"><h3>Daftar ${d.label}</h3><span class="chip">${rows.length}</span></div>${rows.map(r => `<div class="row"><div class="ri"><span class="av sm">${esc(d.ini(r))}</span><div class="rt"><b>${esc(d.title(r))}</b><span class="muted">${esc(d.sub(r))}</span></div></div>
+        <div class="ra"><button class="ghost" data-e="${esc(r.id)}">Edit</button><button class="del" data-d="${esc(r.id)}">Hapus</button></div></div>`).join('') || '<p class="muted">Belum ada data.</p>'}</div>`;
 
     wireTabs();
     app.querySelector('#cancel')?.addEventListener('click', () => { edit = null; draw(); });
@@ -171,10 +190,13 @@ export async function renderAdmin(app) {
 }
 
 function loginView(app) {
-  app.innerHTML = `<h1>Login admin</h1><form class="panel" id="l" style="max-width:380px">
-    ${DEMO ? '<div class="note">Mode demo: isi email bebas, password <b>bts123</b>.</div>' : ''}
-    <label>Email</label><input type="email" name="e" required><label>Password</label><input type="password" name="p" required>
-    <p><button>Masuk</button></p><p id="err" style="color:var(--red)"></p></form>`;
+  app.classList.remove('adm');
+  app.innerHTML = `<div class="login"><span class="mark lg-mark"><span class="mtxt">BTS</span></span>
+    <h1>Masuk admin</h1><p class="muted">Gunakan akun admin yang terdaftar di Firebase.</p>
+    <form id="l">${DEMO ? '<div class="note">Mode demo: isi email bebas, password <b>bts123</b>.</div>' : ''}
+      <label>Email</label><input type="email" name="e" required autocomplete="username">
+      <label>Password</label><input type="password" name="p" required autocomplete="current-password">
+      <button class="wfull">Masuk</button><p id="err" style="color:var(--red)"></p></form></div>`;
   app.querySelector('#l').onsubmit = async e => {
     e.preventDefault();
     try { await auth.login(e.target.e.value, e.target.p.value); renderAdmin(app); }
